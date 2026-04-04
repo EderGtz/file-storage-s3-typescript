@@ -1,15 +1,16 @@
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
-import { getVideo } from "../db/videos";
+import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
-import { BadRequestError, NotFoundError } from "./errors";
+import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 
 type Thumbnail = {
   data: ArrayBuffer;
   mediaType: string;
 };
 
+//Map of video IDs to thumbnail objects. Stores the thumbnail data
 const videoThumbnails: Map<string, Thumbnail> = new Map();
 
 export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
@@ -47,7 +48,47 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   console.log("uploading thumbnail for video", videoId, "by user", userID);
 
-  // TODO: implement the upload here
+  const formData = await req.formData();
+  const file = formData.get("thumbnail");
+  if (!(file instanceof File)) {
+    throw new BadRequestError("Thumbnail file missing");
+  };
 
-  return respondWithJSON(200, null);
+  const MAX_UPLOAD_SIZE = 10 << 20; // 10MB
+
+  if (file.size > MAX_UPLOAD_SIZE) {
+    throw new BadRequestError(
+      `Thumbnail file exceeds the maximum allowed size of 10MB`,
+    );
+  }
+  
+  const mediaType = file.type;
+  if (!mediaType) {
+    throw new BadRequestError("Missing Content-Type for thumbnail");
+  }
+
+  const fileData = await file.arrayBuffer();
+  if (!fileData) {
+    throw new Error("Error reading file data");
+  }
+
+  const videoMetadata = getVideo(cfg.db, videoId);
+  if (!videoMetadata){
+    throw new NotFoundError("Could not find video");
+  };
+
+  if (videoMetadata.userID !== userID) {
+    throw new UserForbiddenError("The user provided is not the owner of the video");
+  };
+
+  videoThumbnails.set(videoId, {
+    data: fileData,
+    mediaType
+  });
+
+  const urlPath = `http://localhost:${cfg.port}/api/thumbnails/${videoId}`;
+  videoMetadata.thumbnailURL = urlPath;
+  updateVideo(cfg.db, videoMetadata);
+
+  return respondWithJSON(200, videoMetadata);
 }
