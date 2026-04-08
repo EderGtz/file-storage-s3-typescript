@@ -6,6 +6,7 @@ import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 import path from 'node:path';
 import { mediaTypeToExt } from "./assets";
+import { randomBytes } from "node:crypto";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -36,6 +37,9 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   if (!mediaType) {
     throw new BadRequestError("Missing Content-Type for thumbnail");
   }
+  if (mediaType !== "image/jpeg" && mediaType !== "image/png") {
+    throw new BadRequestError("Thumbnail should be an image file");
+  };
 
   const fileData = await file.arrayBuffer();
   if (!fileData) {
@@ -52,15 +56,16 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   };
   
   const extension = mediaTypeToExt(mediaType);
-  const fileName = `${videoId}.${extension}`
+  const fileName = randomBytes(32).toString("base64");
+  const finalFileName = `${fileName}${extension}`
 
-  const thumbnailPath = `${cfg.assetsRoot}/${fileName}`;
+  const thumbnailPath = `${cfg.assetsRoot}/${finalFileName}`;
   await Bun.write(
     thumbnailPath,
     file
   );
   
-  const thumbmailUrl = `http://localhost:${cfg.port}${thumbnailPath}`
+  const thumbmailUrl = `http://localhost:${cfg.port}/${thumbnailPath}`
   videoMetadata.thumbnailURL = thumbmailUrl;
   updateVideo(cfg.db, videoMetadata);
 
