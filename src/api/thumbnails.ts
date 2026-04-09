@@ -4,7 +4,6 @@ import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
-import path from 'node:path';
 import { mediaTypeToExt } from "./assets";
 import { randomBytes } from "node:crypto";
 

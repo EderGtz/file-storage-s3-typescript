@@ -1,5 +1,6 @@
 import { newDatabase } from "./db/db";
 import type { Database } from "bun:sqlite";
+import {s3, type S3Client} from "bun"
 
 export type ApiConfig = {
   db: Database;
@@ -7,10 +8,12 @@ export type ApiConfig = {
   platform: string;
   filepathRoot: string;
   assetsRoot: string;
-  s3Bucket: string;
+  s3BucketName: string;
   s3Region: string;
   s3CfDistribution: string;
   port: string;
+  s3Client: S3Client,
+  maxSizeForVideoUpload: number,
 };
 
 const pathToDB = envOrThrow("DB_PATH");
@@ -31,10 +34,12 @@ export const cfg: ApiConfig = {
   platform: platform,
   filepathRoot: filepathRoot,
   assetsRoot: assetsRoot,
-  s3Bucket: s3Bucket,
+  s3BucketName: s3Bucket,
   s3Region: s3Region,
   s3CfDistribution: s3CfDistribution,
   port: port,
+  s3Client: s3,
+  maxSizeForVideoUpload: 1 << 30,
 };
 
 function envOrThrow(key: string) {
