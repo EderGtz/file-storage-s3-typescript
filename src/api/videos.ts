@@ -42,7 +42,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Missing Content-Type for video");
   }
   if (mediaType !== "video/mp4") {
-    throw new BadRequestError("Video should be an image file");
+    throw new BadRequestError(`Video should be an image file: ${mediaType}`);
   };
 
   const videoFileData = await videoFile.arrayBuffer();
@@ -56,6 +56,8 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const videoFilePath = `/tmp/${fileNameWithExt}`;
 
   await Bun.write(videoFilePath, videoFileData);
+  const videoFastFilePath = await processVideoFastStart(videoFilePath);
+
   const videoAspectRatio = await getVideoAspectRadio(videoFilePath);
   const fileNameWithAspectRadio = `${videoAspectRatio}/${fileNameWithExt}`;
 
@@ -64,7 +66,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
       bucket: cfg.s3BucketName
     });
 
-  const videoFileContent = Bun.file(videoFilePath);
+  const videoFileContent = Bun.file(videoFastFilePath);
   await s3VideoFile.write(videoFileContent, {
     type: mediaType
   });
@@ -75,6 +77,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   videoMetadata.videoURL = videoFileUrl;
   updateVideo(cfg.db, videoMetadata);
 
+  await Bun.file(videoFastFilePath).delete();
   await Bun.file(videoFilePath).delete();
   return respondWithJSON(200, videoMetadata);
 };
@@ -83,7 +86,7 @@ export async function getVideoAspectRadio(filePath: string) {
 
   const videoFile = Bun.file(filePath);
   if (videoFile.type !== "video/mp4") {
-    throw new BadRequestError("Video should be an image file");
+    throw new BadRequestError("Video should be an video file");
   };
 
   const proc = Bun.spawn({
@@ -133,4 +136,39 @@ export async function getVideoAspectRadio(filePath: string) {
     default:
       return "other";
   };
+};
+
+/**
+ * Takes a path as input and creates and returns a new path to a file 
+ * with "fast start" encoding, which is moving the moov atom information
+ * (video metadata) to the start of the file
+ */
+export async function processVideoFastStart(inputFilePath: string) {
+  const outputFilePath = `${inputFilePath}.processed`;
+
+  const proc = Bun.spawn({
+    cmd: [
+      "ffmpeg",
+      "-i",
+      inputFilePath,
+      "-movflags",
+      "faststart",
+      "-map_metadata",
+      "0",
+      "-codec",
+      "copy",
+      "-f",
+      "mp4",
+      outputFilePath
+    ],
+    stdout: "pipe"
+  })
+
+  const exited = await proc.exited;
+
+  if (exited !== 0 ) {
+    throw new Error("Error when calling the fast start comand");
+  };
+
+  return outputFilePath;
 };
